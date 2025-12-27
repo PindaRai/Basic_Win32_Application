@@ -1,24 +1,47 @@
-cmake_minimum_required(VERSION 3.25)
-project(Basic_Win32_Application)
+cmake_minimum_required(VERSION 3.20)
+project(Basic_Win32_Application LANGUAGES CXX RC)
 
-set(CMAKE_CXX_STANDARD 23)
+add_executable(Basic_Win32_Application WIN32)
 
-add_executable(Basic_Win32_Application main.cpp ButtonManager.cpp ButtonManager.h
+target_sources(Basic_Win32_Application PRIVATE
+        main.cpp
+        ButtonManager.cpp
         WindowProcHandler.cpp
-        WindowProcHandler.h
         PointerManager.cpp
-        PointerManager.h
         RandomColorGenerator.cpp
-        RandomColorGenerator.h
         Resources.rc
 )
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+# Request C++23 and disable compiler extensions
+target_compile_features(Basic_Win32_Application PRIVATE cxx_std_23)
+set_target_properties(Basic_Win32_Application PROPERTIES
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS NO
+)
 
-configure_file(${CMAKE_SOURCE_DIR}/icon.ico ${CMAKE_BINARY_DIR}/icon.ico COPYONLY)
+# Preprocessor definitions (Unicode + avoid Windows macro conflicts)
+target_compile_definitions(Basic_Win32_Application PRIVATE
+        UNICODE _UNICODE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+)
 
-if (WIN32)
-    set_target_properties(Basic_Win32_Application PROPERTIES WIN32_EXECUTABLE TRUE)
+# Local include path
+target_include_directories(Basic_Win32_Application PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Link required Windows library
+target_link_libraries(Basic_Win32_Application PRIVATE dwmapi)
+
+# Warnings (MSVC vs GCC/Clang)
+if (MSVC)
+    target_compile_options(Basic_Win32_Application PRIVATE /W4 /permissive- /EHsc)
+else()
+    target_compile_options(Basic_Win32_Application PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-target_link_libraries(Basic_Win32_Application dwmapi)
+# -static only applies to MinGW/GCC toolchains
+if (MINGW)
+    target_link_options(Basic_Win32_Application PRIVATE -static)
+endif()
