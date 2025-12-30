@@ -1,0 +1,65 @@
+name: CMake CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: msvc
+            config: Release
+            configure_cmd: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+            build_cmd: cmake --build build --config Release
+
+          - name: clangcl
+            config: Release
+            configure_cmd: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T ClangCL
+            build_cmd: cmake --build build --config Release
+
+          - name: mingw-gcc
+            config: Release
+            msys2: true
+            configure_cmd: cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+            build_cmd: cmake --build build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 (MinGW-w64 GCC)
+        if: ${{ matrix.msys2 }}
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            make
+
+      # Configure/build for MSVC + clang-cl (PowerShell)
+      - name: Configure (MSVC / clang-cl)
+        if: ${{ !matrix.msys2 }}
+        shell: pwsh
+        run: ${{ matrix.configure_cmd }}
+
+      - name: Build (MSVC / clang-cl)
+        if: ${{ !matrix.msys2 }}
+        shell: pwsh
+        run: ${{ matrix.build_cmd }}
+
+      # Configure/build for MinGW (MSYS2 bash)
+      - name: Configure (MinGW)
+        if: ${{ matrix.msys2 }}
+        shell: msys2 {0}
+        run: ${{ matrix.configure_cmd }}
+
+      - name: Build (MinGW)
+        if: ${{ matrix.msys2 }}
+        shell: msys2 {0}
+        run: ${{ matrix.build_cmd }}
