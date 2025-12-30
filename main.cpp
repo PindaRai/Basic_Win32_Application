@@ -14,8 +14,8 @@ namespace {
     constexpr int kInitialWidth = 1280;
     constexpr int kInitialHeight = 720;
 
-    constexpr int kBtnClickId = 1;
-    constexpr int kBtnRandomId = 2;
+    constexpr INT_PTR kBtnClickId = 1;
+    constexpr INT_PTR kBtnRandomId = 2;
 
     constexpr DWORD kUseImmersiveDarkMode = 20;
 }

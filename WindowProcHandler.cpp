@@ -9,8 +9,8 @@
 #include "WindowProcHandler.h"
 
 namespace {
-    constexpr int kChildLabelId = 1000;
-    constexpr int kChildOkId = 1001;
+    constexpr INT_PTR kChildLabelId = 1000;
+    constexpr INT_PTR kChildOkId = 1001;
 
     constexpr int kBtnClickId = 1;
     constexpr int kBtnRandomId = 2;
@@ -58,7 +58,7 @@ LRESULT CALLBACK WindowProcHandler::ChildWindowProc(HWND hwnd, UINT uMsg, WPARAM
                 WS_CHILD | WS_VISIBLE,
                 0, 0, 0, 0,
                 hwnd,
-                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChildLabelId)),
+                reinterpret_cast<HMENU>((kChildLabelId)),
                 nullptr, nullptr
             );
 
@@ -67,7 +67,7 @@ LRESULT CALLBACK WindowProcHandler::ChildWindowProc(HWND hwnd, UINT uMsg, WPARAM
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW,
                 0, 0, 100, 45,
                 hwnd,
-                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChildOkId)),
+                reinterpret_cast<HMENU>((kChildOkId)),
                 nullptr, nullptr
             );
 

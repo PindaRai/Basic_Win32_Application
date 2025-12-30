@@ -37,6 +37,7 @@ ButtonManager::ButtonManager(HWND parentHwnd,
       bgColor(bgColor),
       textColor(textColor),
       borderColor(borderColor) {
+
     // Creating the underlying Win32 button control
     hButton = CreateWindowExW(
         0,
@@ -57,7 +58,7 @@ ButtonManager::ButtonManager(HWND parentHwnd,
 
     // Creating a custom GDI font, this is owned by object and later deleted
     hFont = CreateFontW(
-        fontSize, 0, 0, 0,
+        this->fontSize, 0, 0, 0,
         FW_NORMAL,
         FALSE, FALSE, FALSE,
         DEFAULT_CHARSET,
