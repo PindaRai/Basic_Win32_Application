@@ -1,92 +1,110 @@
-#define UNICODE
 #include <Windows.h>
-#include "Resource.h"
-#include "ButtonManager.h"
 #include <dwmapi.h>
-#include <vector>
+#include <memory>
+
+#include <Resource.h>
+#include "AppState.h"
+#include "ButtonManager.h"
 #include "WindowProcHandler.h"
-#include "PointerManager.h"
-#pragma comment(lib, "dwmapi.lib")
-// DWMAPI's Dark Mode Config
-#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 
+namespace {
+    constexpr wchar_t kClassName[] = L"MyWindowClass";
+    constexpr wchar_t kWindowTitle[] = L"Basic C++ Win32 Application";
 
-// WinMain IS the "entry Point Function" to Windows API   !!!not the int main()!!!
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    // Define variables, important during window init
-    const wchar_t CLASS_NAME[] = L"MyWindowClass";
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+    constexpr int kInitialWidth = 1280;
+    constexpr int kInitialHeight = 720;
 
-    // Registers the Window Class
-    WNDCLASS wc = {};
+    constexpr int kBtnClickId = 1;
+    constexpr int kBtnRandomId = 2;
+
+    constexpr DWORD kUseImmersiveDarkMode = 20;
+}
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
+    // 1) Registering the window class as per Win32 documentation
+    WNDCLASSW wc{};
     wc.lpfnWndProc = WindowProcHandler::WindowProc;
     wc.hInstance = hInstance;
-    wc.lpszClassName = CLASS_NAME;
+    wc.lpszClassName = kClassName;
+    wc.hIcon = static_cast<HICON>(LoadImageW(
+        hInstance,
+        MAKEINTRESOURCEW(IDI_ICON1),
+        IMAGE_ICON,
+        0, 0,
+        LR_DEFAULTSIZE | LR_SHARED
+    ));
 
-    RegisterClass(&wc);
-
-    // Creates handle to the root window instance
-    HWND hwnd = CreateWindowExW(
-            0,
-            CLASS_NAME,
-            L"",
-            WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            screenWidth,
-            screenHeight,
-            nullptr,
-            nullptr,
-            hInstance,
-            nullptr
-    );
-
-    if (hwnd == nullptr) {
+    if (!RegisterClassW(&wc)) {
         return 0;
     }
 
-    // Creates the two button instances
-    ButtonManager buttonManager(hwnd, hInstance, 0, 0, 5, 7, L"Click Here", RGB(35, 35, 35), RGB(255, 255, 255),RGB(255, 255, 255), 32, L"Helvetica", (HMENU)1);
-    ButtonManager buttonManager2(hwnd, hInstance, 0, 0, 5, 7, L"Random Color",  RGB(35, 35, 35), RGB(255, 255, 255),RGB(255, 255, 255), 32, L"Helvetica", (HMENU)2);
+    // 2) Creating app state and passing its pointer to the window via lpCreateParams
+    auto state = std::make_unique<AppState>();
+    AppState *stateRaw = state.get();
 
-    // Creates and adds pointers to custom pointer storage implementation in PointerManager.cpp
-    std::vector<ButtonManager *> pointerArray;
-    pointerArray.push_back(&buttonManager);
-    pointerArray.push_back(&buttonManager2);
+    // 3) Creates the parent window and stores the handle into local var
+    HWND hwnd = CreateWindowExW(
+        0,
+        kClassName,
+        L"",
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        kInitialWidth, kInitialHeight,
+        nullptr, nullptr,
+        hInstance,
+        stateRaw
+    );
 
-    // Sends Pointers then clears the local variable from stack
-    PointerManager::SetButtonPointers(pointerArray);
-    pointerArray.clear();
-
-    auto hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_ICON1));
-
-    if (hIcon) {
-        SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
-        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+    // If window creation fails, terminates the program
+    if (!hwnd) {
+        return 0;
     }
 
-    hIcon = nullptr;
+    // The window now owns 'stateRaw' and will delete it in WM_NCDESTROY.
+    [[maybe_unused]] AppState *ownedByWindow = state.release();
 
-    // Sets Window to Dark Mode through DWM
-    DWORD attributeValue = 1;
-    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &attributeValue, sizeof(attributeValue));
+    // 4) Creating the buttons
+    ButtonManager button1(
+        hwnd, hInstance,
+        0, 0,
+        5, 7,
+        L"Click Here",
+        RGB(35, 35, 35), RGB(255, 255, 255), RGB(255, 255, 255),
+        32, L"Helvetica",
+        reinterpret_cast<HMENU>(kBtnClickId)
+    );
 
-    // Display & Update Window
+    ButtonManager button2(
+        hwnd, hInstance,
+        0, 0,
+        5, 7,
+        L"Random Color",
+        RGB(35, 35, 35), RGB(255, 255, 255), RGB(255, 255, 255),
+        32, L"Helvetica",
+        reinterpret_cast<HMENU>(kBtnRandomId)
+    );
+
+    // Stores button pointers into the app state
+    stateRaw->btn1 = &button1;
+    stateRaw->btn2 = &button2;
+
+    // Attempts to set the Window to dark mode using custom constant
+    const DWORD enable = TRUE;
+    if (FAILED(DwmSetWindowAttribute(hwnd, kUseImmersiveDarkMode, &enable, sizeof(enable)))) {
+        OutputDebugStringW(L"Dark Mode failed \n");
+    }
+
+    // 5) Shows the window and runs the message loop
     ShowWindow(hwnd, SW_MAXIMIZE);
-    SetWindowText(hwnd, L"Basic C++ Win32 Application");
+    SetWindowTextW(hwnd, kWindowTitle);
     UpdateWindow(hwnd);
 
-    // Create Message Event Loop
-    MSG msg;
-    while (GetMessage(&msg, nullptr, 0, 0)) {
+    MSG msg{};
+    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        DispatchMessageW(&msg);
     }
 
-    // Clears Memory upon Program Exit
-    DestroyWindow(hwnd);
-    UnregisterClass(CLASS_NAME, hInstance);
-
+    UnregisterClassW(kClassName, hInstance);
     return 0;
 }

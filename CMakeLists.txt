@@ -1,18 +1,19 @@
+# Project requires a minimum version of CMake 3.20 to build
 cmake_minimum_required(VERSION 3.20)
 project(Basic_Win32_Application LANGUAGES CXX RC)
 
-add_executable(Basic_Win32_Application WIN32)
+add_executable(Basic_Win32_Application WIN32
+        AppState.h
+        Resource.h)
 
 target_sources(Basic_Win32_Application PRIVATE
         main.cpp
         ButtonManager.cpp
         WindowProcHandler.cpp
-        PointerManager.cpp
-        RandomColorGenerator.cpp
         Resources.rc
 )
 
-# Request C++23 and disable compiler extensions
+# Request C++23 and disables compiler extensions
 target_compile_features(Basic_Win32_Application PRIVATE cxx_std_23)
 set_target_properties(Basic_Win32_Application PROPERTIES
         CXX_STANDARD_REQUIRED YES

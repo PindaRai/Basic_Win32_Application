@@ -16,7 +16,7 @@ LANGUAGE 9, 1  // Primary language id (English), sublanguage id (English - UK)
 
 1 TEXTINCLUDE 
 BEGIN
-    "resource.h\0"
+    "Resource.h\0"
 END
 
 2 TEXTINCLUDE 
@@ -37,7 +37,7 @@ END
 //
 // Icon
 //
-#define IDI_ICON1 101
+IDI_ICON1 ICON "icon.ico"
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.

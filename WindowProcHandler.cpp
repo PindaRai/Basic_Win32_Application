@@ -1,307 +1,451 @@
-#define UNICODE
-#include "WindowProcHandler.h"
-#include <iostream>
 #include <Windows.h>
-#include "ButtonManager.h"
-#include "PointerManager.h"
-#include "RandomColorGenerator.h"
+#include <cwchar>
 #include <dwmapi.h>
-#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#include <vector>
-#pragma comment(lib, "dwmapi.lib")
+#include <random>
 
-boolean isOpen = false;
-auto randomNumberGenerator = new RandomColorGenerator();
-ButtonManager* buttonManager;
-ButtonManager* buttonManager2;
-COLORREF bgColor = (20, 20, 20);
-COLORREF textColor, borderColor;
-int newWidth, newHeight, updWinWidth, updWinHeight, wmId, centerX, centerY, computeButtonX, computeButtonY, commandId;
+#include "AppState.h"
+#include "ButtonManager.h"
+#include "Resource.h"
+#include "WindowProcHandler.h"
 
-// Child window process function
-LRESULT WindowProcHandler::ChildWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    // Switch statement to manage message codes for the child window
-    switch (uMsg) {
-        // Window message to create elements
-        case WM_CREATE: {
-            HWND hLabel = CreateWindowW(L"STATIC", L"Button clicked", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr, nullptr, nullptr);
+namespace {
+    constexpr int kChildLabelId = 1000;
+    constexpr int kChildOkId = 1001;
 
-            HFONT hFont = CreateFontW(32, 0, 0, 0, FW_BLACK, FALSE, FALSE, FALSE,
-                                      DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
-                                      DEFAULT_PITCH | FF_DONTCARE, L"Futura");
+    constexpr int kBtnClickId = 1;
+    constexpr int kBtnRandomId = 2;
 
-            HWND hButton = CreateWindowW(L"BUTTON", L"OK", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                                         0, 0, 75, 30, hwnd, (HMENU)1001, nullptr, nullptr);
+    constexpr COLORREF kChildBg = RGB(30, 30, 30);
 
-            if (hFont) {
-                SendMessage(hLabel, WM_SETFONT, (WPARAM) hFont, TRUE);
-            }
+    constexpr DWORD kUseImmersiveDarkMode = 20;
 
-            LONG_PTR buttonStyle = GetWindowLongPtr(hButton, GWL_STYLE);
-            buttonStyle &= ~(BS_TYPEMASK);
-            buttonStyle |= BS_OWNERDRAW;
-            SetWindowLongPtr(hButton, GWL_STYLE, buttonStyle);
-
-            break;
-        }
-        // Window message that deals with size events
-        case WM_SIZE: {
-            HWND hLabel = GetDlgItem(hwnd, 0);
-            HWND hButton = GetDlgItem(hwnd, 1001);
-
-            newWidth = LOWORD(lParam);
-            newHeight = HIWORD(lParam);
-
-            const wchar_t* labelText = L"Button clicked";
-            SIZE textSize;
-            HDC hdc = GetDC(hLabel);
-            auto hFont = (HFONT)SendMessage(hLabel, WM_GETFONT, 0, 0);
-            auto hOldFont = (HFONT)SelectObject(hdc, hFont);
-            GetTextExtentPoint32W(hdc, labelText, wcslen(labelText), &textSize);
-            SelectObject(hdc, hOldFont);
-            ReleaseDC(hLabel, hdc);
-
-            centerX = (newWidth - textSize.cx) / 2;
-            centerY = (newHeight - textSize.cy) / 2;
-
-            computeButtonX = (newWidth - 100) / 2;
-            computeButtonY = (newHeight + textSize.cy) / 2;
-
-            SetWindowPos(hLabel, nullptr, centerX, centerY - 37, textSize.cx, textSize.cy, SWP_NOZORDER);
-            SetWindowPos(hButton, nullptr, computeButtonX, computeButtonY, 100, 45, SWP_NOZORDER);
-
-            break;
-        }
-        // Window message to draw items
-        case WM_DRAWITEM: {
-            auto lpDrawItemStruct = reinterpret_cast<LPDRAWITEMSTRUCT>(lParam);
-            if (lpDrawItemStruct->CtlID == 1001) {
-
-                HDC hdc = lpDrawItemStruct->hDC;
-                RECT rc = lpDrawItemStruct->rcItem;
-                UINT state = lpDrawItemStruct->itemState;
-                const wchar_t* buttonText = L"OK";
-
-                if (state & ODS_SELECTED) {
-                    bgColor = RGB(200, 200, 200);
-                    textColor = RGB(0, 0, 0);
-                    borderColor = RGB(128, 128, 128);
-                } else {
-                    bgColor = RGB(45, 45, 45);
-                    textColor = RGB(255, 255, 255);
-                    borderColor = RGB(128, 128, 128);
-                }
-
-                HBRUSH hBrush = CreateSolidBrush(bgColor);
-                FillRect(hdc, &rc, hBrush);
-                DeleteObject(hBrush);
-
-                HBRUSH hBorderBrush = CreateSolidBrush(borderColor);
-                FrameRect(hdc, &rc, hBorderBrush);
-                DeleteObject(hBorderBrush);
-
-                SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, textColor);
-                DrawText(hdc, buttonText, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
-                return TRUE;
-            }
-            break;
-        }
-        // Window message to control colour static
-        case WM_CTLCOLORSTATIC: {
-            HDC hdcStatic = (HDC)wParam;
-            SetBkColor(hdcStatic, RGB(30, 30, 30));
-            SetTextColor(hdcStatic, RGB(255, 255, 255));
-            return (LRESULT)GetStockObject(NULL_BRUSH);
-        }
-        // Message code to trigger repaint to avoid graphical glitches when resizing window
-        case WM_PAINT: {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hwnd, &ps);
-
-            HBRUSH hBrush = CreateSolidBrush(RGB(30, 30, 30));
-            FillRect(hdc, &ps.rcPaint, hBrush);
-            DeleteObject(hBrush);
-
-            EndPaint(hwnd, &ps);
-            break;
-        }
-        // Window messages in the context of commands
-        case WM_COMMAND: {
-            wmId = LOWORD(wParam);
-            if (wmId == 1001) {
-                DestroyWindow(hwnd);
-            }
-            break;
-        }
-        // Window message ran when window undergoes destruction
-        case WM_DESTROY: {
-            isOpen = false;
-            DestroyWindow(hwnd);
-            UnregisterClass(L"ChildWindowClass", nullptr);
-            return DefWindowProc(hwnd, uMsg, wParam, lParam);
-            break;
-        }
-        default:
-            return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    // Function generates random RGB value for the parent window background
+    COLORREF RandomColour() {
+        static std::mt19937 gen{std::random_device{}()};
+        static std::uniform_int_distribution<int> dis(0, 255);
+        return RGB(dis(gen), dis(gen), dis(gen));
     }
-    return 0;
 }
 
-// Main window process
-LRESULT WindowProcHandler::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+/**
+ * Child window proc. function, it uses the parent's AppState via GWLP_USERDATA, creates a label and ok button
+ * using styles inherited from parent window for UI attributes
+ * @param hwnd Window handle
+ * @param uMsg Window message queue feed
+ * @param wParam Word parameter
+ * @param lParam Long parameter
+ * @return
+ */
+LRESULT CALLBACK WindowProcHandler::ChildWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_NCCREATE) {
+        const auto *cs = reinterpret_cast<const CREATESTRUCTW *>(lParam);
+        auto *state = static_cast<AppState *>(cs->lpCreateParams);
 
-    // Gets pointers for ButtonManager instances and set them to local variables
-    std::vector<ButtonManager*> pointerArr = PointerManager::GetButtonPointers();
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
 
-    if (!pointerArr.empty()) {
-        buttonManager = pointerArr.at(0);
-        buttonManager2 = pointerArr.at(1);
-        pointerArr.clear();
+        if (state) state->childHwnd = hwnd;
+        return TRUE;
     }
 
-    // Switch statement to manage message codes for the child window
+    auto *state = reinterpret_cast<AppState *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+    // Main switch statement incorporating child windows' messages
     switch (uMsg) {
-        // Window message that deals with size events
+        // Creates the label and button windows inside child window and sets state inside AppState
+        case WM_CREATE: {
+            HWND hLabel = CreateWindowW(
+                L"STATIC", L"Button clicked",
+                WS_CHILD | WS_VISIBLE,
+                0, 0, 0, 0,
+                hwnd,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChildLabelId)),
+                nullptr, nullptr
+            );
+
+            HWND hButton = CreateWindowW(
+                L"BUTTON", L"OK",
+                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW,
+                0, 0, 100, 45,
+                hwnd,
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChildOkId)),
+                nullptr, nullptr
+            );
+
+            if (hButton) {
+                SendMessageW(hButton, WM_SETFONT,
+                             reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),
+                             TRUE);
+            }
+
+            if (state && hLabel) {
+                if (!state->childLabelFont) {
+                    state->childLabelFont = CreateFontW(
+                        32, 0, 0, 0, FW_BLACK,
+                        FALSE, FALSE, FALSE,
+                        DEFAULT_CHARSET,
+                        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                        DEFAULT_PITCH | FF_DONTCARE,
+                        L"Helvetica"
+                    );
+                }
+
+                if (state->childLabelFont) {
+                    SendMessageW(hLabel, WM_SETFONT,
+                                 reinterpret_cast<WPARAM>(state->childLabelFont),
+                                 TRUE);
+                }
+            }
+
+            return 0;
+        }
+
+        // Inherits parent buttons' UI attributes and paints them on
+        case WM_DRAWITEM: {
+            const auto *dis = reinterpret_cast<LPDRAWITEMSTRUCT>(lParam);
+            if (!dis || dis->CtlID != kChildOkId || !state || !state->btn1) break;
+
+            HDC hdc = dis->hDC;
+            RECT rc = dis->rcItem;
+
+            const COLORREF bg = state->btn1->GetBgColor();
+            const COLORREF border = state->btn1->GetBorderColor();
+            const COLORREF text = state->btn1->GetTextColor();
+
+            HBRUSH bgBrush = CreateSolidBrush(bg);
+            FillRect(hdc, &rc, bgBrush);
+            DeleteObject(bgBrush);
+
+            HBRUSH borderBrush = CreateSolidBrush(border);
+            FrameRect(hdc, &rc, borderBrush);
+            DeleteObject(borderBrush);
+
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, text);
+            DrawTextW(hdc, L"OK", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+            return TRUE;
+        }
+
+        // Paints dark bg pre-emptively to avoid default bright colour flicker
+        case WM_ERASEBKGND: {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+
+            HBRUSH b = CreateSolidBrush(kChildBg);
+            FillRect(hdc, &rc, b);
+            DeleteObject(b);
+
+            return 1;
+        }
+
+        // Ensuring readable light font on dark background
+        case WM_CTLCOLORSTATIC: {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            SetTextColor(hdc, RGB(255, 255, 255));
+            SetBkMode(hdc, TRANSPARENT);
+            return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+        }
+
+        // Sets dimensions of child window UI objects
         case WM_SIZE: {
-            updWinWidth = LOWORD(lParam);
-            updWinHeight = HIWORD(lParam);
+            const int w = LOWORD(lParam);
+            const int h = HIWORD(lParam);
 
-            buttonManager->ComputeResize(updWinWidth, updWinHeight);
-            buttonManager2->ComputeResize(updWinWidth, updWinHeight);
+            HWND hLabel = GetDlgItem(hwnd, kChildLabelId);
+            HWND hButton = GetDlgItem(hwnd, kChildOkId);
+            if (!hLabel || !hButton) return 0;
 
-            newWidth = buttonManager->GetWidth();
-            newHeight = buttonManager->GetHeight();
+            constexpr wchar_t labelText[] = L"Button clicked";
+            SIZE textSize{};
 
-            buttonManager->SetSizeAndPosition(((updWinWidth - newWidth)/2)-(newWidth), (updWinHeight - newHeight) / 2,
-                                              newWidth, newHeight);
+            HDC hdc = GetDC(hLabel);
+            if (!hdc) return 0;
 
-            buttonManager2->SetSizeAndPosition(((updWinWidth - newWidth)/2)+(newWidth), (updWinHeight - newHeight) / 2,
-                                              newWidth, newHeight);
+            auto hFont = reinterpret_cast<HFONT>(SendMessageW(hLabel, WM_GETFONT, 0, 0));
+            HFONT old = hFont ? static_cast<HFONT>(SelectObject(hdc, hFont)) : nullptr;
+
+            GetTextExtentPoint32W(hdc, labelText, static_cast<int>(wcslen(labelText)), &textSize);
+
+            if (old) SelectObject(hdc, old);
+            ReleaseDC(hLabel, hdc);
+
+            const int centerX = (w - textSize.cx) / 2;
+            const int centerY = (h - textSize.cy) / 2;
+
+            const int bx = (w - 100) / 2;
+            const int by = (h + textSize.cy) / 2;
+
+            SetWindowPos(hLabel, nullptr, centerX, centerY - 37, textSize.cx, textSize.cy, SWP_NOZORDER);
+            SetWindowPos(hButton, nullptr, bx, by, 100, 45, SWP_NOZORDER);
 
             InvalidateRect(hwnd, nullptr, TRUE);
+            return 0;
+        }
+
+        // When user confirms exiting child window on dialog, it destroys it
+        case WM_COMMAND: {
+            if (LOWORD(wParam) == kChildOkId) {
+                DestroyWindow(hwnd);
+                return 0;
+            }
             break;
         }
-        // Window messages in the context of commands
+
+        //  Clearing GWLP_USERDATA upon child window destruction
+        case WM_DESTROY:
+            if (state) {
+                state->childOpen = false;
+                if (state->childHwnd == hwnd) state->childHwnd = nullptr;
+            }
+            return 0;
+
+        // Cleanup of non-cached GDI objects from memory
+        case WM_NCDESTROY:
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+
+        default:
+            break;
+    }
+
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+}
+
+
+/**
+ * Parent window proc. function, it owns the AppState information, handles the Win32 aspect logic of buttons,
+ * destroys both AppState and parent window upon program termination
+ * @param hwnd Handle to window
+ * @param uMsg Message queue
+ * @param wParam Word parameter
+ * @param lParam Long parameter
+ * @return
+ */
+LRESULT CALLBACK WindowProcHandler::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_NCCREATE) {
+        const auto *cs = reinterpret_cast<const CREATESTRUCTW *>(lParam);
+        auto *state = static_cast<AppState *>(cs->lpCreateParams);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+        return TRUE;
+    }
+
+    auto *state = reinterpret_cast<AppState *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+    switch (uMsg) {
+        // Sets the dimensions and position of elements in parent window
+        case WM_SIZE: {
+            if (!state || !state->btn1 || !state->btn2) return 0;
+
+            const int w = LOWORD(lParam);
+            const int h = HIWORD(lParam);
+
+            state->btn1->ComputeResize(w, h);
+            state->btn2->ComputeResize(w, h);
+
+            const int bw = state->btn1->GetWidth();
+            const int bh = state->btn1->GetHeight();
+
+            state->btn1->SetSizeAndPosition((w - bw) / 2 - bw, (h - bh) / 2, bw, bh);
+            state->btn2->SetSizeAndPosition((w - bw) / 2 + bw, (h - bh) / 2, bw, bh);
+
+            InvalidateRect(hwnd, nullptr, TRUE);
+            return 0;
+        }
+
+        // Handling of parent buttons' Win32 logic, by checking click ID and performing appropriate action
         case WM_COMMAND: {
-            commandId = LOWORD(wParam);
-            if (commandId == 1 && isOpen == false) {
-                    isOpen = true;
-                    const wchar_t CHILD_CLASS_NAME[] = L"ChildWindowClass";
-                    WNDCLASS childWndClass = {};
-                    childWndClass.lpfnWndProc = WindowProcHandler::ChildWindowProc;
-                    childWndClass.hInstance = GetModuleHandle(nullptr);
+            if (!state) return 0;
+
+            const int id = LOWORD(wParam);
+
+            // User clicks button labelled 'Click Here', the function creates child window, sets state and displays it
+            if (id == kBtnClickId && !state->childOpen) {
+                state->childOpen = true;
+
+                constexpr wchar_t CHILD_CLASS_NAME[] = L"ChildWindowClass";
+                static bool childRegistered = false;
+
+                // Setting child window class
+                if (!childRegistered) {
+                    WNDCLASSW childWndClass = {};
+                    childWndClass.lpfnWndProc = ChildWindowProc;
+                    childWndClass.hInstance = GetModuleHandleW(nullptr);
                     childWndClass.lpszClassName = CHILD_CLASS_NAME;
-                    RegisterClass(&childWndClass);
 
-                    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-                    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-                    int childWidth = screenWidth / 5;
-                    int childHeight = screenHeight / 6;
-                    int xPos = (screenWidth - childWidth) / 2;
-                    int yPos = (screenHeight - childHeight) / 2;
+                    childWndClass.hIcon = static_cast<HICON>(LoadImageW(
+                        GetModuleHandleW(nullptr),
+                        MAKEINTRESOURCEW(IDI_ICON1),
+                        IMAGE_ICON,
+                        0, 0,
+                        LR_DEFAULTSIZE | LR_SHARED
+                    ));
 
-                    HWND hChildWnd = CreateWindowEx(0, CHILD_CLASS_NAME, L"Button Clicked", WS_OVERLAPPEDWINDOW,
-                        xPos, yPos, childWidth, childHeight, hwnd, nullptr,
-                        GetModuleHandle(nullptr), nullptr);
+                    RegisterClassW(&childWndClass);
+                    childRegistered = true;
+                }
+
+                const int screenW = GetSystemMetrics(SM_CXSCREEN);
+                const int screenH = GetSystemMetrics(SM_CYSCREEN);
+                const int childW = screenW / 5;
+                const int childH = screenH / 6;
+                const int xPos = (screenW - childW) / 2;
+                const int yPos = (screenH - childH) / 2;
+
+                // Creation of child window is done here
+                HWND hChildWnd = CreateWindowExW(
+                    0, CHILD_CLASS_NAME, L"Button Clicked",
+                    WS_OVERLAPPEDWINDOW,
+                    xPos, yPos, childW, childH,
+                    nullptr, nullptr, GetModuleHandleW(nullptr),
+                    state
+                );
+
+                // Sets state upon successful creation
+                if (hChildWnd) {
+                    state->childHwnd = hChildWnd;
 
                     DWORD attributeValue = 1;
-                    DwmSetWindowAttribute(hChildWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &attributeValue,
-                        sizeof(attributeValue));
+                    HRESULT hr = DwmSetWindowAttribute(
+                        hChildWnd,
+                        kUseImmersiveDarkMode,
+                        &attributeValue,
+                        sizeof(attributeValue)
+                    );
+
+                    if (FAILED(hr)) {
+                        OutputDebugStringW(L"DwmSetWindowAttribute: dark mode failed \n");
+                    }
 
                     ShowWindow(hChildWnd, SW_SHOW);
                     UpdateWindow(hChildWnd);
+                } else {
+                    state->childOpen = false;
+                    state->childHwnd = nullptr;
                 }
-                else if (commandId == 2) {
-                    PAINTSTRUCT ps;
-                    HDC hdc = BeginPaint(hwnd, &ps);
-                    bgColor = randomNumberGenerator->GetRndBg();
-                    InvalidateRect(hwnd, nullptr, TRUE);
-                    HBRUSH hBrush = CreateSolidBrush(bgColor);
-                    FillRect(hdc, &ps.rcPaint, hBrush);
-                    DeleteObject(hBrush);
 
-                    EndPaint(hwnd, &ps);
-                }
-            break;
+                return 0;
+            }
+
+            // Otherwise the Random button sets the parent windows' background colour to random
+            if (id == kBtnRandomId) {
+                state->bgColor = RandomColour();
+                InvalidateRect(hwnd, nullptr, TRUE);
+                return 0;
+            }
+
+            return 0;
         }
-        // Window message to draw items
+
+        // Sets the parent window UI object attributes, uses state data
         case WM_DRAWITEM: {
-            auto lpDrawItemStruct = (LPDRAWITEMSTRUCT)lParam;
-            if (lpDrawItemStruct->CtlID == 1) {
-                HDC hdc = lpDrawItemStruct->hDC;
-                RECT rc = lpDrawItemStruct->rcItem;
-                // UINT state = lpDrawItemStruct->itemState;
-                const auto buttonText = L"Click Here";
+            if (!state || !state->btn1 || !state->btn2) break;
 
-                HBRUSH hBrush = CreateSolidBrush(buttonManager->GetBgColor());
-                FillRect(hdc, &rc, hBrush);
-                DeleteObject(hBrush);
+            const auto *dis = reinterpret_cast<LPDRAWITEMSTRUCT>(lParam);
+            if (!dis) break;
 
-                HBRUSH hBorderBrush = CreateSolidBrush(buttonManager->GetBorderColor());
-                FrameRect(hdc, &rc, hBorderBrush);
-                DeleteObject(hBorderBrush);
+            HDC hdc = dis->hDC;
+            RECT rc = dis->rcItem;
 
-                SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, buttonManager->GetTextColor());
-                DrawText(hdc, buttonText, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            if (dis->CtlID == kBtnClickId) {
+                const auto text = L"Click Here";
 
-                return TRUE;
-            } else if (lpDrawItemStruct->CtlID == 2) {
-                HDC hdc = lpDrawItemStruct->hDC;
-                RECT rc = lpDrawItemStruct->rcItem;
-                // UINT state = lpDrawItemStruct->itemState;
-                const auto buttonText2 = L"Random Colour";
+                HBRUSH bg = CreateSolidBrush(state->btn1->GetBgColor());
+                FillRect(hdc, &rc, bg);
+                DeleteObject(bg);
 
-                HBRUSH hBrush = CreateSolidBrush(buttonManager2->GetBgColor());
-                FillRect(hdc, &rc, hBrush);
-                DeleteObject(hBrush);
-
-                HBRUSH hBorderBrush = CreateSolidBrush(buttonManager2->GetBorderColor());
-                FrameRect(hdc, &rc, hBorderBrush);
-                DeleteObject(hBorderBrush);
+                HBRUSH border = CreateSolidBrush(state->btn1->GetBorderColor());
+                FrameRect(hdc, &rc, border);
+                DeleteObject(border);
 
                 SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, buttonManager2->GetTextColor());
-                DrawText(hdc, buttonText2, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
+                SetTextColor(hdc, state->btn1->GetTextColor());
+                DrawTextW(hdc, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
                 return TRUE;
             }
+
+            if (dis->CtlID == kBtnRandomId) {
+                const auto text = L"Random Colour";
+
+                HBRUSH bg = CreateSolidBrush(state->btn2->GetBgColor());
+                FillRect(hdc, &rc, bg);
+                DeleteObject(bg);
+
+                HBRUSH border = CreateSolidBrush(state->btn2->GetBorderColor());
+                FrameRect(hdc, &rc, border);
+                DeleteObject(border);
+
+                SetBkMode(hdc, TRANSPARENT);
+                SetTextColor(hdc, state->btn2->GetTextColor());
+                DrawTextW(hdc, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                return TRUE;
+            }
+
             break;
         }
-        // Message code to trigger repaint to avoid graphical glitches when resizing window
+
+        // Painting background colour on parent window
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
 
-            HBRUSH hBrush = CreateSolidBrush(bgColor);
+            COLORREF c = state ? state->bgColor : RGB(20, 20, 20);
+            HBRUSH hBrush = CreateSolidBrush(c);
             FillRect(hdc, &ps.rcPaint, hBrush);
             DeleteObject(hBrush);
 
             EndPaint(hwnd, &ps);
-            break;
+            return 0;
         }
-        // Message code that represents when the window is tried to be closed
-        case WM_CLOSE: {
-            int result = MessageBoxW(hwnd, L"Do you want to close the window?", L"Confirmation",
-                                     MB_YESNO | MB_ICONQUESTION);
 
+        case WM_CLOSE: {
+            const int result = MessageBoxW(hwnd, L"Do you want to close the window?", L"Confirmation",
+                                           MB_YESNO | MB_ICONQUESTION);
             if (result == IDYES) {
+                if (state && state->childHwnd && IsWindow(state->childHwnd)) {
+                    DestroyWindow(state->childHwnd);
+                    state->childHwnd = nullptr;
+                    state->childOpen = false;
+                }
                 DestroyWindow(hwnd);
             }
             return 0;
         }
-        // Window message ran when window undergoes destruction
-        case WM_DESTROY: {
-            if (randomNumberGenerator != nullptr) {
-                delete randomNumberGenerator;
-            }
+
+        // Upon destruction it lets Windows OS know
+        case WM_DESTROY:
             PostQuitMessage(0);
-            break;
+            return 0;
+
+        // Cleans up all parent window objects including cached child windows' from memory
+        case WM_NCDESTROY: {
+            auto *dyingState = reinterpret_cast<AppState *>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+
+            if (dyingState) {
+                if (dyingState->childHwnd && IsWindow(dyingState->childHwnd)) {
+                    DestroyWindow(dyingState->childHwnd);
+                    dyingState->childHwnd = nullptr;
+                    dyingState->childOpen = false;
+                }
+
+                if (dyingState->childLabelFont) {
+                    DeleteObject(dyingState->childLabelFont);
+                    dyingState->childLabelFont = nullptr;
+                }
+
+                dyingState->btn1 = nullptr;
+                dyingState->btn2 = nullptr;
+
+                delete dyingState;
+            }
+
+            return DefWindowProcW(hwnd, uMsg, wParam, lParam);
         }
+
         default:
-            return DefWindowProc(hwnd, uMsg, wParam, lParam);
+            break;
     }
-    return 0;
+
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
 }
