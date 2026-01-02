@@ -1,11 +1,11 @@
-#include <Windows.h>
 #include <dwmapi.h>
 #include <memory>
+#include <Windows.h>
 
 #include <Resource.h>
-#include "AppState.h"
-#include "ButtonManager.h"
-#include "WindowProcHandler.h"
+#include "app/AppState.h"
+#include "app/ButtonManager.h"
+#include "app/WindowProcHandler.h"
 
 namespace {
     constexpr wchar_t kClassName[] = L"MyWindowClass";

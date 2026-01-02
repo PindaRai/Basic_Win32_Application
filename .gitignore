@@ -1,1 +1,8 @@
 /bin (x64 release)/
+build/
+out/
+.vs/
+*.aps
+*.json
+*.exe
+*.pdb

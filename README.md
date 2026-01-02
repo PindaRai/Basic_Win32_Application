@@ -3,7 +3,7 @@
 <b><u><p align="center"> Image of Project Main Window </p></u></b>
 
 <p align="center">
-<img width="60%" src="media/Main_Window.png"></img>
+<img width="60%" src="docs/media/Main_Window.png"></img>
 </p>
 
 ## Description
@@ -17,7 +17,7 @@ Program utilises the Windows's API (WIN32/WIN64) to display a window with two bu
 -<b> G++:</b> Compiler for program <br>
 
 ## Demo Video
-[![Demo Video](https://raw.githubusercontent.com/DevPinda/Basic_Win32_Application/main/media/YouTube_Thumbnail.png)](https://www.youtube.com/embed/YkuXCTYdztc "Basic Win32 C++ Application")
+[![Demo Video](https://raw.githubusercontent.com/DevPinda/Basic_Win32_Application/main/docs/media/YouTube_Thumbnail.png)](https://www.youtube.com/embed/YkuXCTYdztc "Basic Win32 C++ Application")
 
 ## Newly acquired expertise from project
 - Windows's API (Win32/Win64) Functions and implementation at low level

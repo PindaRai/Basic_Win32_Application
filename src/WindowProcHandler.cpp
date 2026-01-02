@@ -3,10 +3,10 @@
 #include <dwmapi.h>
 #include <random>
 
-#include "AppState.h"
-#include "ButtonManager.h"
+#include "app/AppState.h"
+#include "app/ButtonManager.h"
 #include "Resource.h"
-#include "WindowProcHandler.h"
+#include "app/WindowProcHandler.h"
 
 namespace {
     constexpr int kChildLabelId = 1000;
