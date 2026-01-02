@@ -9,8 +9,8 @@
 #include "WindowProcHandler.h"
 
 namespace {
-    constexpr INT_PTR kChildLabelId = 1000;
-    constexpr INT_PTR kChildOkId = 1001;
+    constexpr int kChildLabelId = 1000;
+    constexpr int kChildOkId = 1001;
 
     constexpr int kBtnClickId = 1;
     constexpr int kBtnRandomId = 2;
@@ -58,7 +58,7 @@ LRESULT CALLBACK WindowProcHandler::ChildWindowProc(HWND hwnd, UINT uMsg, WPARAM
                 WS_CHILD | WS_VISIBLE,
                 0, 0, 0, 0,
                 hwnd,
-                reinterpret_cast<HMENU>((kChildLabelId)),
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChildLabelId)),
                 nullptr, nullptr
             );
 
@@ -67,7 +67,7 @@ LRESULT CALLBACK WindowProcHandler::ChildWindowProc(HWND hwnd, UINT uMsg, WPARAM
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW,
                 0, 0, 100, 45,
                 hwnd,
-                reinterpret_cast<HMENU>((kChildOkId)),
+                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kChildOkId)),
                 nullptr, nullptr
             );
 
@@ -102,7 +102,7 @@ LRESULT CALLBACK WindowProcHandler::ChildWindowProc(HWND hwnd, UINT uMsg, WPARAM
         // Inherits parent buttons' UI attributes and paints them on
         case WM_DRAWITEM: {
             const auto *dis = reinterpret_cast<LPDRAWITEMSTRUCT>(lParam);
-            if (!dis || dis->CtlID != kChildOkId || !state || !state->btn1) break;
+            if (!dis || dis->CtlID != static_cast<UINT>(kChildOkId) || !state || !state->btn1) break;
 
             HDC hdc = dis->hDC;
             RECT rc = dis->rcItem;
@@ -200,7 +200,7 @@ LRESULT CALLBACK WindowProcHandler::ChildWindowProc(HWND hwnd, UINT uMsg, WPARAM
             }
             return 0;
 
-        // Cleanup of non-cached GDI objects from memory
+        // Detaching AppState pointer from this HWND
         case WM_NCDESTROY:
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             return DefWindowProcW(hwnd, uMsg, wParam, lParam);
@@ -256,29 +256,35 @@ LRESULT CALLBACK WindowProcHandler::WindowProc(HWND hwnd, UINT uMsg, WPARAM wPar
         // Handling of parent buttons' Win32 logic, by checking click ID and performing appropriate action
         case WM_COMMAND: {
             if (!state) return 0;
-
             const int id = LOWORD(wParam);
 
-            // User clicks button labelled 'Click Here', the function creates child window, sets state and displays it
-            if (id == kBtnClickId && !state->childOpen) {
-                state->childOpen = true;
+            // When clicking the "Click Here" button, if child wnd is already open (refocuses) otherwise creates one
+            if (id == kBtnClickId) {
+                // Child exists then just restores or refocuses
+                if (state->childHwnd && IsWindow(state->childHwnd)) {
+                    if (IsIconic(state->childHwnd)) {
+                        ShowWindow(state->childHwnd, SW_RESTORE);
+                    }
+                    if (GetForegroundWindow() != state->childHwnd) {
+                        SetForegroundWindow(state->childHwnd);
+                    }
+                    return 0;
+                }
 
+                // Child doesn't exist so creates one
                 constexpr wchar_t CHILD_CLASS_NAME[] = L"ChildWindowClass";
                 static bool childRegistered = false;
 
-                // Setting child window class
-                if (!childRegistered) {
-                    WNDCLASSW childWndClass = {};
-                    childWndClass.lpfnWndProc = ChildWindowProc;
-                    childWndClass.hInstance = GetModuleHandleW(nullptr);
-                    childWndClass.lpszClassName = CHILD_CLASS_NAME;
+                HINSTANCE hInst = GetModuleHandleW(nullptr);
 
+                if (!childRegistered) {
+                    WNDCLASSW childWndClass{};
+                    childWndClass.lpfnWndProc = ChildWindowProc;
+                    childWndClass.hInstance = hInst;
+                    childWndClass.lpszClassName = CHILD_CLASS_NAME;
                     childWndClass.hIcon = static_cast<HICON>(LoadImageW(
-                        GetModuleHandleW(nullptr),
-                        MAKEINTRESOURCEW(IDI_ICON1),
-                        IMAGE_ICON,
-                        0, 0,
-                        LR_DEFAULTSIZE | LR_SHARED
+                        hInst, MAKEINTRESOURCEW(IDI_ICON1),
+                        IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED
                     ));
 
                     RegisterClassW(&childWndClass);
@@ -292,33 +298,25 @@ LRESULT CALLBACK WindowProcHandler::WindowProc(HWND hwnd, UINT uMsg, WPARAM wPar
                 const int xPos = (screenW - childW) / 2;
                 const int yPos = (screenH - childH) / 2;
 
-                // Creation of child window is done here
                 HWND hChildWnd = CreateWindowExW(
                     0, CHILD_CLASS_NAME, L"Button Clicked",
                     WS_OVERLAPPEDWINDOW,
                     xPos, yPos, childW, childH,
-                    nullptr, nullptr, GetModuleHandleW(nullptr),
+                    nullptr, nullptr, hInst,
                     state
                 );
 
-                // Sets state upon successful creation
                 if (hChildWnd) {
                     state->childHwnd = hChildWnd;
+                    state->childOpen = true;
 
                     DWORD attributeValue = 1;
-                    HRESULT hr = DwmSetWindowAttribute(
-                        hChildWnd,
-                        kUseImmersiveDarkMode,
-                        &attributeValue,
-                        sizeof(attributeValue)
-                    );
-
-                    if (FAILED(hr)) {
-                        OutputDebugStringW(L"DwmSetWindowAttribute: dark mode failed \n");
+                    if (FAILED(DwmSetWindowAttribute(hChildWnd, kUseImmersiveDarkMode,
+                        &attributeValue, sizeof(attributeValue)))) {
+                        OutputDebugStringW(L"DwmSetWindowAttribute: dark mode failed\n");
                     }
 
                     ShowWindow(hChildWnd, SW_SHOW);
-                    UpdateWindow(hChildWnd);
                 } else {
                     state->childOpen = false;
                     state->childHwnd = nullptr;
@@ -327,7 +325,7 @@ LRESULT CALLBACK WindowProcHandler::WindowProc(HWND hwnd, UINT uMsg, WPARAM wPar
                 return 0;
             }
 
-            // Otherwise the Random button sets the parent windows' background colour to random
+            // Otherwise the Random button randomizes the parent windows' background
             if (id == kBtnRandomId) {
                 state->bgColor = RandomColour();
                 InvalidateRect(hwnd, nullptr, TRUE);
